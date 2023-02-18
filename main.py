@@ -1,61 +1,59 @@
-# This is a sample Python script.
+"""
+Based on 'Bank Renege' example from SimPy docs.
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+Scenario:
+  A teller with a random service time and customers who run out of patience after a while
+
+"""
 import random
+
 import simpy
 
 RANDOM_SEED = 11
 NEW_CUSTOMERS = 5  # Total number of customers
 INTERVAL_CUSTOMERS = 10.0  # Generate new customers roughly every x seconds
 SERVICE_TIME = 5.0  # This is mean service time for customers at counter
-MIN_PATIENCE = 1  # Min. customer patience
-MAX_PATIENCE = 3  # Max. customer patience
+MIN_PATIENCE = 9999999  # Set minimum patience time to effectively infinite
+MAX_PATIENCE = 99999999  # Set maximum patience time to effectively infinite
 
+IA_iterator = iter([0.4, 0.3, 0.4, 1.7, 1.7, 0.5, 0.9])
+service_iterator = iter([1.6, 0.5, 1.0, 0.3, 0.8, 0.4, 1.2])
 
-def customer_creator_process(env, number, interval, counter):
-    """Generates customers' arrivals randomly.
-       Inter-arrival times are exponentially distributed with given mean interval
-    """
-    print(' time     name       message')
-    for i in range(number):
+def customer_creator_process(env, counter):
+    """Generates customers' arrivals according to the hardwired inter-arrival times sequence."""
+    print('Time\tCustomer\tMessage')
+    i = 0
+    while True:
         c = customer(env, f'Customer_{i:02d}', counter)
         env.process(c)
-        t = random.expovariate(1.0 / interval)
+        t = next(IA_iterator, None)
+        if t is None:
+            break
         yield env.timeout(t)
-
+        i += 1
 
 def customer(env, name, counter):
     """Customer arrives, is served and leaves."""
     arrive = env.now
-    print(f'{arrive:7.4f} {name}: Arrived')
+    print(f'{arrive:.2f}\t{name}\tArrived')
 
     with counter.request() as req:
-        patience = random.uniform(MIN_PATIENCE, MAX_PATIENCE)  # random patience time from uniform distribution
-        # Wait for the teller or abort once customers patience runs out.
-        results = yield req | env.timeout(patience)  # this will yield either req or timeout -- the first one to occur
-
+        # Wait for the teller
+        yield req
         wait = env.now - arrive
 
-        if req in results:
-            # We got to the counter
-            print(f'{env.now:7.4f} {name}: Waited in line: {wait:6.3f}')
-
-            tac = random.expovariate(1.0 / SERVICE_TIME)
-            yield env.timeout(tac)
-            print(f'{env.now:7.4f} {name}: Service time: {tac}')
-
-        else:
-            # We reneged
-            print(f'{env.now:7.4f} {name}: Ran out of patience after after {wait:6.3f}')
-
+        # Start service
+        service_time = next(service_iterator, None)
+        if service_time is None:
+            return
+        yield env.timeout(service_time)
+        print(f'{env.now:.2f}\t{name}\tDeparted\tTotal wait time: {wait:.2f}')
 
 # Setup and start the simulation
-print('Bank Renege')
-random.seed(RANDOM_SEED)
+print('Bank Simulation')
 env = simpy.Environment()
-
-# Start processes and run
 counter = simpy.Resource(env, capacity=1)
-env.process(customer_creator_process(env, NEW_CUSTOMERS, INTERVAL_CUSTOMERS, counter))
-env.run()
+env.process(customer_creator_process(env, counter))
+
+# Run the simulation until no more customers
+env.run(until=None)
